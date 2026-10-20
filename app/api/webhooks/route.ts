@@ -9,6 +9,7 @@ import Ably from 'ably';
 import crypto from 'crypto';
 import { sql } from '@vercel/postgres';
 
+import { ownerChannelsForWaba } from '@/app/api/ablyUtils';
 import { getAckBotStatus, getAckBotMessage, send } from '@/app/api/beUtils';
 import privateConfig from '@/app/privateConfig';
 
@@ -52,14 +53,23 @@ export async function POST(request: NextRequest) {
 
     const ably = new Ably.Realtime({ key: ablyKey, clientId: 'webhook_server' });
     await ably.connection.once('connected');
-    const channel = ably.channels.get('get-started');
 
-    // Publish raw webhook data for the live webhook viewer (unchanged)
-    await channel.publish('first', data);
-    console.log('[Webhook] Published raw data. object:', data.object, 'fields:', data.entry?.map((e: { changes?: { field: string }[] }) => e.changes?.map((c) => c.field)).flat());
+    // Deliver only to the users who connected this WABA, never to every signed-in user
+    const publishToOwners = async (wabaId: string, name: string, payload: unknown) => {
+      const channelNames = await ownerChannelsForWaba(wabaId);
+      await Promise.all(channelNames.map((channelName) => ably.channels.get(channelName).publish(name, payload)));
+    };
+
+    if (data.object !== 'whatsapp_business_account') {
+      console.log('[Webhook] Ignoring webhook object without a WABA owner:', data.object);
+    }
 
     if (data.object === 'whatsapp_business_account') {
       for (const entry of data.entry ?? []) {
+        // Publish raw webhook data for the live webhook viewer, one entry per owner
+        await publishToOwners(entry.id, 'first', { ...data, entry: [entry] });
+        console.log('[Webhook] Published raw entry. waba:', entry.id, 'fields:', entry.changes?.map((c: { field: string }) => c.field));
+
         for (const change of entry.changes ?? []) {
           const value = change.value;
           const field = change.field;
@@ -74,7 +84,7 @@ export async function POST(request: NextRequest) {
             if (value?.calls?.length > 0) {
               const call = value.calls[0];
               console.log('[Webhook] Publishing call event:', call.event, 'callId:', call.id);
-              await channel.publish('call', {
+              await publishToOwners(entry.id, 'call', {
                 type: 'call_event',
                 event: call.event,
                 phoneNumberId: metadata?.phone_number_id,
@@ -90,7 +100,7 @@ export async function POST(request: NextRequest) {
             // Call statuses: ringing, accepted, completed, failed
             if (value?.statuses?.length > 0) {
               const status = value.statuses[0];
-              await channel.publish('call', {
+              await publishToOwners(entry.id, 'call', {
                 type: 'call_status',
                 status: status.status,
                 phoneNumberId: metadata?.phone_number_id,
@@ -150,11 +160,7 @@ export async function POST(request: NextRequest) {
                     ],
                   };
 
-                  const ably2 = new Ably.Realtime({ key: ablyKey, clientId: 'webhook_ackbot' });
-                  await ably2.connection.once('connected');
-                  const ackChannel = ably2.channels.get('get-started');
-                  await ackChannel.publish('first', ackPayload);
-                  ably2.close();
+                  await publishToOwners(wabaId, 'first', ackPayload);
                 }
               }
             }

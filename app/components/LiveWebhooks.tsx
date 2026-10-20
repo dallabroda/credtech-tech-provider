@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import Ably from 'ably';
 import { Radio, Clock, CheckCircle2, ChevronDown, ChevronUp, Wifi } from 'lucide-react';
 
+import { subscribeUserChannel } from '@/app/ablyChannel';
 import { cn } from '@/lib/utils';
 
 interface WebhookEntry {
@@ -113,10 +114,9 @@ export default function LiveWebhooks({ appId }: { appId: string }) {
     });
     ablyClient.connection.on('connected', () => setConnected(true));
     ablyClient.connection.on('disconnected', () => setConnected(false));
-    const channel = ablyClient.channels.get('get-started');
-    channel.subscribe('first', (message) => addWebhook(message.data));
+    const unsubscribe = subscribeUserChannel(ablyClient, 'first', (message) => addWebhook(message.data));
     return function cleanup() {
-      channel.unsubscribe();
+      unsubscribe();
       ablyClient.close();
     };
   }, []);

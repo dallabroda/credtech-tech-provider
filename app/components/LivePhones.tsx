@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 
 import Ably from 'ably';
 
+import { subscribeUserChannel } from '@/app/ablyChannel';
 import SendMessage from '@/app/components/SendMessage';
 import { cn } from '@/lib/utils';
 
@@ -90,9 +91,8 @@ export default function LivePhones({ phoneDisplay, phoneNumberId, wabaId }: Live
       },
     });
 
-    // Create a channel called 'get-started' and register a listener to subscribe to all messages with the name 'first'
-    const channel = ablyClient.channels.get('get-started');
-    channel.subscribe('first', (message) => {
+    // Register a listener on the user's private channel for all messages with the name 'first'
+    const unsubscribe = subscribeUserChannel(ablyClient, 'first', (message) => {
       const text = message.data.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.text?.body;
 
       if (text) {
@@ -118,6 +118,7 @@ export default function LivePhones({ phoneDisplay, phoneNumberId, wabaId }: Live
       setMessages({});
       setChats({});
       setWebhooks([]);
+      unsubscribe();
       ablyClient.close();
     };
   }, [phoneNumberId]);

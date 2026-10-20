@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Ably from 'ably';
 import { Phone as PhoneIcon } from 'lucide-react';
 
+import { subscribeUserChannel } from '@/app/ablyChannel';
 import PhoneListSidebar from '@/app/components/PhoneListSidebar';
 import ConversationView, { type Message } from '@/app/components/ConversationView';
 import PhoneRegistrationModal from '@/app/components/PhoneRegistrationModal';
@@ -552,8 +553,7 @@ export default function InboxLayout({ phones }: { phones: PhoneDetails[] }) {
       setAblyState('failed');
     });
 
-    const channel = ablyClient.channels.get('get-started');
-    channel.subscribe('first', (message) => {
+    const unsubscribe = subscribeUserChannel(ablyClient, 'first', (message) => {
       const ownedPhoneIds = new Set(phonesRef.current.map((p) => p.id));
       const fields = message.data.entry?.flatMap((e: { changes?: { field: string }[] }) => e.changes?.map((c) => c.field));
       console.log('[Webhook] Received first event. fields:', fields, 'owned phones:', [...ownedPhoneIds]);
@@ -801,7 +801,7 @@ export default function InboxLayout({ phones }: { phones: PhoneDetails[] }) {
     return () => {
       if (ringTimeoutRef.current) clearTimeout(ringTimeoutRef.current);
       if (endedResetTimeoutRef.current) clearTimeout(endedResetTimeoutRef.current);
-      channel.unsubscribe();
+      unsubscribe();
       ablyClient.close();
     };
   }, [addMessage, addChat, markUnread, markMissedCall]);

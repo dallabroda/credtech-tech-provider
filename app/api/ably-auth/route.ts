@@ -7,6 +7,8 @@ import { NextResponse } from 'next/server';
 
 import Ably from 'ably';
 
+import { userChannelName } from '@/app/ablyChannel';
+import { ablyClientIdFor } from '@/app/api/ablyUtils';
 import { withAuth } from '@/app/api/authWrapper';
 import getPrivateConfig from '@/app/privateConfig';
 
@@ -19,6 +21,8 @@ async function createTokenRequest(clientId: string) {
     {
       ttl: 3600000,
       clientId: clientId,
+      // Only the user's own channel, subscribe-only
+      capability: { [userChannelName(clientId)]: ['subscribe'] },
     },
     {
       key: ablyKey,
@@ -30,7 +34,7 @@ async function createTokenRequest(clientId: string) {
 
 export const GET = withAuth(async function createAblyToken(_, session) {
   try {
-    const clientId = session.user.email;
+    const clientId = ablyClientIdFor(session.user.email);
     const tokenRequest = await createTokenRequest(clientId);
     return NextResponse.json(tokenRequest);
   } catch (error) {
